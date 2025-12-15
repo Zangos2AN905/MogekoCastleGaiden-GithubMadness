@@ -8,11 +8,20 @@
         "sdl2-image",
         "sdl2-ttf",
         {
-            "name": "sdl-mixer-ext",
+            "name": "sdl2-mixer-ext",
             "features": [
-                "mp3",
+                "ffmpeg",
                 "fluidsynth",
-                "nativemidi"
+                "libadlmidi",
+                "libflac",
+                "libgme",
+                "libmodplug",
+                "libvorbis",
+                "mpg123",
+                "openmpt",
+                "opusfile",
+                "timidity",
+                "wavpack"
             ]
         }
     ]
