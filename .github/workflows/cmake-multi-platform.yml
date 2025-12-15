@@ -44,7 +44,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev pkg-config libxi-dev libxrandr-dev
+          sudo apt-get install -y \
+            libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev pkg-config \
+            libxi-dev libxrandr-dev libxxf86vm-dev libxss-dev \
+            libasound2-dev libpulse-dev libsndio-dev \
+            libflac-dev libvorbis-dev libmpg123-dev libopus-dev \
+            libfluidsynth-dev libtimidity-dev \
+            autoconf automake libtool nasm
 
       # Setup vcpkg
       - name: Setup vcpkg
@@ -65,13 +71,56 @@ jobs:
       - name: Build
         run: cmake --build build --config ${{ env.BUILD_TYPE }}
 
+      # Install to a staging directory (this copies DLLs automatically)
+      - name: Install
+        run: cmake --install build --config ${{ env.BUILD_TYPE }} --prefix staging
+
+      # Copy DLLs on Windows
+      - name: Copy DLLs (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $buildDir = "build/${{ env.BUILD_TYPE }}"
+          $vcpkgBin = "${{ github.workspace }}/vcpkg/installed/${{ matrix.vcpkg_triplet }}/bin"
+          if (Test-Path $vcpkgBin) {
+            Copy-Item "$vcpkgBin/*.dll" -Destination $buildDir -Force -ErrorAction SilentlyContinue
+          }
+          # Also copy from vcpkg_installed in build dir
+          $vcpkgInstalled = "build/vcpkg_installed/${{ matrix.vcpkg_triplet }}/bin"
+          if (Test-Path $vcpkgInstalled) {
+            Copy-Item "$vcpkgInstalled/*.dll" -Destination $buildDir -Force -ErrorAction SilentlyContinue
+          }
+
+      # Copy shared libraries on Linux
+      - name: Copy shared libraries (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p build/lib
+          # Copy from vcpkg installed libs
+          if [ -d "build/vcpkg_installed/${{ matrix.vcpkg_triplet }}/lib" ]; then
+            cp -r build/vcpkg_installed/${{ matrix.vcpkg_triplet }}/lib/*.so* build/lib/ 2>/dev/null || true
+          fi
+          if [ -d "${{ github.workspace }}/vcpkg/installed/${{ matrix.vcpkg_triplet }}/lib" ]; then
+            cp -r ${{ github.workspace }}/vcpkg/installed/${{ matrix.vcpkg_triplet }}/lib/*.so* build/lib/ 2>/dev/null || true
+          fi
+
       # Upload build artifacts
-      - name: Upload artifacts
+      - name: Upload artifacts (Windows)
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            build/${{ env.BUILD_TYPE }}/*.exe
+            build/${{ env.BUILD_TYPE }}/
+          if-no-files-found: warn
+
+      - name: Upload artifacts (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
             build/MogekoCastleGaiden
             build/assets/
+            build/lib/
           if-no-files-found: warn

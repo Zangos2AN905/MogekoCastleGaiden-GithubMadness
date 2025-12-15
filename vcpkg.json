@@ -10,11 +10,24 @@
         {
             "name": "sdl2-mixer-ext",
             "features": [
-                "nativemidi",
                 "libflac",
                 "libvorbis",
                 "mpg123"
             ]
+        },
+        {
+            "name": "sdl2-mixer-ext",
+            "features": [
+                "nativemidi"
+            ],
+            "platform": "windows"
+        },
+        {
+            "name": "sdl2-mixer-ext",
+            "features": [
+                "libadlmidi"
+            ],
+            "platform": "linux"
         }
     ]
 }
