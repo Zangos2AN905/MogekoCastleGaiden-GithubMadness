@@ -8,10 +8,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(SDL2 CONFIG REQUIRED)
 find_package(SDL2_image CONFIG REQUIRED)
 find_package(SDL2_ttf CONFIG REQUIRED)
-find_package(SDL_mixer_ext CONFIG QUIET)
 
-# If SDL_mixer_ext not found via config, try pkg-config
-if(NOT SDL_mixer_ext_FOUND)
+# Try to find SDL_mixer_ext under various names
+find_package(SDL2_mixer_ext CONFIG QUIET)
+if(NOT SDL2_mixer_ext_FOUND)
+    find_package(SDL_mixer_ext CONFIG QUIET)
+endif()
+if(NOT SDL2_mixer_ext_FOUND AND NOT SDL_mixer_ext_FOUND)
     find_package(PkgConfig QUIET)
     if(PKG_CONFIG_FOUND)
         pkg_check_modules(SDL_MIXER_EXT IMPORTED_TARGET SDL2_mixer_ext)
