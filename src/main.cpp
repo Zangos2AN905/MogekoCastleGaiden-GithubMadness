@@ -6,8 +6,11 @@
 
 #include "ui/loading_screen.hpp"
 #include "ui/dialogue_system.hpp"
+#include "engine/rpg_rt_transition.hpp"
 #include "engine/title.hpp"
+#include "game/cutscenes/warning.hpp"
 
+#include <functional>
 #include <iostream>
 #include <string>
 
@@ -19,6 +22,7 @@ const char* WINDOW_TITLE = "Mogeko Castle Gaiden: Github Madness";
 // Game state
 enum class GameState {
     Loading,
+    Warning,
     Intro,
     Title,
     Playing
@@ -29,11 +33,14 @@ GameState g_state = GameState::Loading;
 SDL_Window* g_window = nullptr;
 SDL_Renderer* g_renderer = nullptr;
 Uint32 g_last_time = 0;
+Uint32 g_transition_timer = 0;
 
 // UI Systems
 LoadingScreen g_loading_screen;
 DialogueSystem g_dialogue_system;
 TitleScreen g_title_screen;
+WarningScreen g_warning_screen;
+RpgRtTransition g_transition;
 
 #ifndef NO_AUDIO
 Mix_Music* g_music = nullptr;
@@ -41,8 +48,110 @@ Mix_Music* g_introMusic = nullptr;
 Mix_Music* g_titleMusic = nullptr;
 #endif
 
+void playMusic(Mix_Music* music, int loops = -1);
+
+void renderState(GameState state) {
+    switch (state) {
+        case GameState::Loading:
+            g_loading_screen.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+            break;
+        case GameState::Warning:
+            g_warning_screen.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+            break;
+        case GameState::Intro:
+            SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+            SDL_RenderClear(g_renderer);
+            g_dialogue_system.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+            break;
+        case GameState::Title:
+            g_title_screen.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+            break;
+        case GameState::Playing:
+            SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
+            SDL_RenderClear(g_renderer);
+            break;
+    }
+}
+
+void enterState(GameState newState) {
+    g_state = newState;
+
+    switch (g_state) {
+        case GameState::Warning:
+            g_warning_screen.reset();
+            break;
+        case GameState::Intro:
+            g_dialogue_system.start();
+#ifndef NO_AUDIO
+            playMusic(g_introMusic);
+#endif
+            break;
+        case GameState::Title:
+#ifndef NO_AUDIO
+            playMusic(g_titleMusic);
+#endif
+            break;
+        case GameState::Playing:
+            g_title_screen.reset();
+            std::cout << "Starting game..." << std::endl;
+            break;
+        default:
+            break;
+    }
+}
+
+void requestStateChange(GameState newState,
+                        RpgRtTransition::Type transitionType = RpgRtTransition::Type::FadeIn) {
+    if (g_renderer == nullptr || g_transition.isActive()) {
+        enterState(newState);
+        return;
+    }
+
+    renderState(g_state);
+    SDL_Surface* fromSurface = RpgRtTransition::CaptureRenderer(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    enterState(newState);
+    renderState(g_state);
+    SDL_Surface* toSurface = RpgRtTransition::CaptureRenderer(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+    if (fromSurface != nullptr && toSurface != nullptr) {
+        if (g_transition.begin(g_renderer, transitionType, fromSurface, toSurface)) {
+            g_transition_timer = 0;
+        }
+    }
+
+    if (fromSurface != nullptr) {
+        SDL_FreeSurface(fromSurface);
+    }
+    if (toSurface != nullptr) {
+        SDL_FreeSurface(toSurface);
+    }
+}
+
+void updateTransition(Uint32 delta_time) {
+    if (!g_transition.isActive()) {
+        g_transition_timer = 0;
+        return;
+    }
+
+    g_transition_timer += delta_time;
+    constexpr Uint32 kFrameLengthMs = 1000 / 60;
+    const int framesToAdvance = static_cast<int>(g_transition_timer / kFrameLengthMs);
+    if (framesToAdvance <= 0) {
+        return;
+    }
+
+    g_transition.advance(framesToAdvance);
+    g_transition_timer -= static_cast<Uint32>(framesToAdvance) * kFrameLengthMs;
+
+    if (g_transition.isFinished()) {
+        g_transition.reset();
+        g_transition_timer = 0;
+    }
+}
+
 // Helper to play music
-void playMusic(Mix_Music* music, int loops = -1) {
+void playMusic(Mix_Music* music, int loops) {
 #ifndef NO_AUDIO
     if (music) {
         Mix_HaltMusic();
@@ -115,6 +224,10 @@ bool init() {
         std::cerr << "Failed to initialize dialogue system!" << std::endl;
     }
 
+    if (!g_warning_screen.init("assets/fonts/determination.ttf", 28)) {
+        std::cerr << "Failed to initialize warning screen!" << std::endl;
+    }
+
     // Load intro dialogue
     if (!g_dialogue_system.loadDialogue("assets/dialogue/begin.jsonc")) {
         std::cerr << "Failed to load intro dialogue!" << std::endl;
@@ -123,10 +236,7 @@ bool init() {
     // Set callback for when intro dialogue completes
     g_dialogue_system.setOnComplete([]() {
         std::cout << "Intro complete, moving to title..." << std::endl;
-        g_state = GameState::Title;
-#ifndef NO_AUDIO
-        playMusic(g_titleMusic);
-#endif
+        requestStateChange(GameState::Title);
     });
 
     // Initialize title screen
@@ -154,8 +264,9 @@ bool init() {
 
 void cleanup() {
     g_loading_screen.cleanup();
-    g_dialogue_system.cleanup();
     g_title_screen.cleanup();
+    g_warning_screen.cleanup();
+    g_dialogue_system.cleanup();
 
 #ifndef NO_AUDIO
     if (g_music != nullptr) {
@@ -198,13 +309,19 @@ void handleEvents() {
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     g_running = false;
                 }
+                if (g_transition.isActive()) {
+                    break;
+                }
                 // Handle input based on state
                 switch (g_state) {
                     case GameState::Loading:
                         // Skip loading screen on any key press
                         g_loading_screen.setComplete(true);
                         break;
-                case GameState::Intro:
+                    case GameState::Warning:
+                        g_warning_screen.handleKeyDown(event.key.keysym.sym);
+                        break;
+                    case GameState::Intro:
                         // Advance dialogue
                         if (event.key.keysym.sym == SDLK_RETURN || 
                             event.key.keysym.sym == SDLK_SPACE ||
@@ -224,17 +341,25 @@ void handleEvents() {
 }
 
 void update(Uint32 delta_time) {
+    updateTransition(delta_time);
+    if (g_transition.isActive()) {
+        return;
+    }
+
     switch (g_state) {
         case GameState::Loading:
             g_loading_screen.update(delta_time);
             // Check if loading is complete
             if (g_loading_screen.isComplete()) {
-                std::cout << "Loading complete, starting intro..." << std::endl;
-                g_state = GameState::Intro;
-                g_dialogue_system.start();
-#ifndef NO_AUDIO
-                playMusic(g_introMusic);
-#endif
+                std::cout << "Loading complete, showing warning..." << std::endl;
+                requestStateChange(GameState::Warning);
+            }
+            break;
+        case GameState::Warning:
+            g_warning_screen.update(delta_time);
+            if (g_warning_screen.isComplete()) {
+                std::cout << "Warning acknowledged, starting intro..." << std::endl;
+                requestStateChange(GameState::Intro);
             }
             break;
         case GameState::Intro:
@@ -243,9 +368,7 @@ void update(Uint32 delta_time) {
         case GameState::Title:
             g_title_screen.update(delta_time);
             if (g_title_screen.shouldStartGame()) {
-                g_title_screen.reset();
-                g_state = GameState::Playing;
-                std::cout << "Starting game..." << std::endl;
+                requestStateChange(GameState::Playing);
             }
             break;
         case GameState::Playing:
@@ -255,22 +378,10 @@ void update(Uint32 delta_time) {
 }
 
 void render() {
-    switch (g_state) {
-        case GameState::Loading:
-            g_loading_screen.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-            break;
-        case GameState::Intro:
-            // Black background for intro
-            SDL_SetRenderDrawColor(g_renderer, 0, 0, 0, 255);
-            SDL_RenderClear(g_renderer);
-            g_dialogue_system.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-            break;
-        case GameState::Title:
-            g_title_screen.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
-            break;
-        case GameState::Playing:
-            // Nothing
-            break;
+    if (g_transition.isActive()) {
+        g_transition.render(g_renderer);
+    } else {
+        renderState(g_state);
     }
 
     // Present

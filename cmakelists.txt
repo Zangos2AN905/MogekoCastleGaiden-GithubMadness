@@ -27,6 +27,7 @@ set(SOURCES
     src/ui/loading_screen.cpp
     src/ui/dialogue_system.cpp
     src/engine/title.cpp
+    src/game/cutscenes/warning.cpp
 )
 
 # Create executable
