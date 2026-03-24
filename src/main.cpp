@@ -141,7 +141,7 @@ bool init() {
         std::cerr << "Failed to load intro music: " << Mix_GetError() << std::endl;
     }
     
-    g_titleMusic = Mix_LoadMUS("assets/music/M_DM2TTL.mid");
+    g_titleMusic = Mix_LoadMUS("assets/music/Theme3.mid");
     if (!g_titleMusic) {
         std::cerr << "Failed to load title music: " << Mix_GetError() << std::endl;
     }
@@ -269,14 +269,7 @@ void render() {
             g_title_screen.render(g_renderer, SCREEN_WIDTH, SCREEN_HEIGHT);
             break;
         case GameState::Playing:
-            // Clear screen with dark purple (Mogeko Castle vibes)
-            SDL_SetRenderDrawColor(g_renderer, 32, 16, 48, 255);
-            SDL_RenderClear(g_renderer);
-
-            // Draw a simple placeholder rectangle
-            SDL_SetRenderDrawColor(g_renderer, 255, 220, 100, 255); // Mogeko yellow
-            SDL_Rect rect = { SCREEN_WIDTH / 2 - 50, SCREEN_HEIGHT / 2 - 50, 100, 100 };
-            SDL_RenderFillRect(g_renderer, &rect);
+            // Nothing
             break;
     }
 

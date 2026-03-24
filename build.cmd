@@ -5,6 +5,6 @@ if not exist .run_once_flag (
     echo.> .run_once_flag
 )
 rem then build
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=c:\Users\Moge-ko\Downloads\buildscripts-master\windows\vcpkg\scripts\buildsystems\vcpkg.cmake
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=c:\vcpkg\scripts\buildsystems\vcpkg.cmake
 cmake --build build
 @echo on
